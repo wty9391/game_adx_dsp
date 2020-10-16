@@ -13,7 +13,7 @@ class Truthful_bidder():
         # Z is a m x 1 matrix
 
         self.model.fit(x, y.ravel())
-        self.alpha = np.sum(z, axis=0) / np.sum(y, axis=0)
+        self.alpha = (np.sum(z, axis=0) / np.sum(y, axis=0))[0]
 
         return self.model, self.alpha
 

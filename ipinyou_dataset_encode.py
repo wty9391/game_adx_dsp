@@ -78,8 +78,8 @@ pickle.dump(Y_train, open(sys.argv[4]+'/y_train', 'wb'))
 pickle.dump(Z_train, open(sys.argv[4] + '/z_train', 'wb'))
 
 pickle.dump(X_test, open(sys.argv[4] + '/x_test', 'wb'))
-pickle.dump(Y_train, open(sys.argv[4]+'/y_train', 'wb'))
-pickle.dump(Z_train, open(sys.argv[4] + '/z_train', 'wb'))
+pickle.dump(Y_train, open(sys.argv[4]+'/y_test', 'wb'))
+pickle.dump(Z_train, open(sys.argv[4] + '/z_test', 'wb'))
 
 f_train_log.close()
 f_test_log.close()

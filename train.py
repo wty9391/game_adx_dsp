@@ -17,7 +17,7 @@ x_train = pickle.load(open(sys.argv[1] + '/x_train', 'rb'))
 y_train = pickle.load(open(sys.argv[1] + '/y_train', 'rb'))
 z_train = pickle.load(open(sys.argv[1] + '/z_train', 'rb'))
 
-(train_size, ) = np.shape(x_train)
+(train_size, _) = np.shape(x_train)
 
 
 index = np.arange(train_size)
@@ -28,7 +28,5 @@ adx_instance = adx.ADX(dsp_number=dsp_number)
 adx_instance.train_dsp(x_train, y_train, z_train, indices)
 adx_instance.train_adx(x_train, y_train, z_train)
 
-
-
-
+pickle.dump(adx_instance, open(sys.argv[1] + '/adx', 'wb'))
 

@@ -18,7 +18,7 @@ y_test = pickle.load(open(sys.argv[1] + '/y_test', 'rb'))
 z_test = pickle.load(open(sys.argv[1] + '/z_test', 'rb'))
 
 adx_instance = pickle.load(open(sys.argv[1] + '/adx', 'rb'))
-adx_instance.play(x_test, y_test, z_test)
+adx_instance.play(x_test, y_test, z_test, dsp_total_budget=z_test.sum()/8)
 
 
 

@@ -1,9 +1,11 @@
 import sys
 import math
+import numpy as np
 
 eps = sys.float_info.epsilon
 
-class Util():
+
+class Util:
     def __init__(self):
         pass
 
@@ -17,8 +19,9 @@ class Util():
 
     @staticmethod
     def cdf_to_pdf(cdf):
+        cdf = cdf.copy()
+        cdf.insert(0, 0.0 + eps)
         pdf = [cdf[i + 1] - cdf[i] if cdf[i + 1] - cdf[i] > 0 else 1e-6 for i in range(len(cdf) - 1)]
-        pdf.insert(0, 0.0 + eps)
         # normalize
         pdf_sum = sum(pdf)
 
@@ -28,8 +31,52 @@ class Util():
     def pdf_to_cdf(pdf):
         # normalize
         pdf_sum = sum(pdf)
-        pdf = [pdf[i] / pdf_sum if pdf[i] > 0 else 1e-6 for i in range(len(pdf))]
+        pdf = [pdf[i] / pdf_sum if pdf[i] > 0 else eps for i in range(len(pdf))]
 
-        cdf = [sum(pdf[0:i]) for i in range(1, len(pdf))]
-        cdf.append(1.0)
+        cdf = [sum(pdf[0:i+1]) for i in range(len(pdf))]
         return cdf
+
+
+class Chunk:
+    def __init__(self):
+        self.data = np.asarray([]).reshape((-1, 1))
+        self.values = []
+        self.pdf = []
+        self.cdf = []
+        self.expectation = 0
+        self.integra_pdf = []
+        self.integra_cdf = []
+        self.integra_cdf_normalized = []
+
+    def update_data(self, data):
+        self.__init__()
+        self.append_data(data)
+
+    def append_data(self, data):
+        """
+
+        :param data: could be array or list
+        :return:
+        """
+        data = np.asarray(data).reshape((-1, 1))
+
+        self.data = np.vstack((self.data, data))
+        (unique, counts) = np.unique(self.data, return_counts=True)  # the unique has been sorted
+        self.values = unique.tolist()
+        self.cdf = Util.pdf_to_cdf(counts)
+        self.pdf = Util.cdf_to_pdf(self.cdf)
+
+        self.expectation = np.mean(self.data)
+        self.integra_pdf = []
+        self.integra_cdf = []
+        self.integra_cdf_normalized = []
+        for i in range(len(self.values)):
+            self.integra_pdf.append(self.pdf[i] * self.values[i])
+            pdf_normalized = [self.pdf[j] / self.cdf[i] for j in range(i+1)]
+            self.integra_cdf_normalized.append(sum([pdf_normalized[j] * self.values[j] for j in range(i+1)]))
+        self.integra_cdf = [sum(self.integra_pdf[0:i+1]) for i in range(len(self.integra_pdf))]
+
+        assert len(self.values) == len(self.pdf) == len(self.cdf) == \
+               len(self.integra_pdf) == len(self.integra_cdf) == len(self.integra_cdf_normalized)\
+            , "the length of values, pdf and cdf must be equal"
+

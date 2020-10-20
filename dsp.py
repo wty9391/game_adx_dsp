@@ -9,7 +9,7 @@ class DSP():
         self.ctr_max_iter = ctr_max_iter
         self.bidder = truthful_bidder.Truthful_bidder(max_iter=ctr_max_iter)
         self.max_bid_price = max_bid_price
-        self.market_price = Chunk()
+        self.market_price = Chunk(list(range(0, self.max_bid_price)))
 
         self.budget = 0
         self.available_budget = 0
@@ -22,11 +22,7 @@ class DSP():
 
     def train(self, x, y, z):
         _, alpha = self.bidder.fit(x, y, z)
-        self.bidder.evaluate(x, y)
-
-        market_price_candidates = list(range(0, self.max_bid_price))
-        self.market_price.update_data(market_price_candidates)
-        self.market_price.append_data(z)
+        # self.market_price.append_data(z)
 
         self.last_br = x
 
@@ -66,8 +62,6 @@ class DSP():
         self.imp += is_winner.sum()
         self.click += click[is_winner].sum()
 
-        market_price_candidates = list(range(0, self.max_bid_price))
-        self.market_price.update_data(market_price_candidates)
         self.market_price.append_data(market_prices[is_winner])
 
     def update_strategy(self, available_br_number, max_iteration=10, converge_threshold=0.01):

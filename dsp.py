@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 import util.truthful_bidder as truthful_bidder
 from util.util import Util, Chunk
@@ -19,6 +20,9 @@ class DSP():
         self.cost = 0
 
         self.last_br = None  # used to update strategy
+
+        self.bidding_history = pd.DataFrame(columns=["round", "pctrs", "bids"])
+        self.market_price_history = pd.DataFrame(columns=["round", "market_prices"])
 
     def train(self, x, y, z):
         _, alpha = self.bidder.fit(x, y, z)
@@ -42,6 +46,9 @@ class DSP():
 
         return bids
 
+    def predict_ctr(self, bid_requests):
+        return self.bidder.model.predict_proba(bid_requests)[:, 1].reshape((-1, 1))
+
     def play(self, budget, available_br_number):
         self.budget = int(budget)
         self.available_budget = self.budget
@@ -63,6 +70,16 @@ class DSP():
         self.click += click[is_winner].sum()
 
         self.market_price.append_data(market_prices[is_winner])
+
+        pctr = self.predict_ctr(bid_requests)
+        bids = self.bid(bid_requests)
+        df = pd.DataFrame([[round, pctr[i, 0], bids[i, 0]] for i in range(br_size)],
+                          columns=["round", "pctrs", "bids"])
+        self.bidding_history = self.bidding_history.append(df, ignore_index=True)
+
+        df = pd.DataFrame([[round, market_prices[i, 0]] for i in range(is_winner.sum())],
+                          columns=["round", "market_prices"])
+        self.market_price_history = self.market_price_history.append(df, ignore_index=True)
 
     def update_strategy(self, available_br_number, max_iteration=10, converge_threshold=0.01):
         # TODO update strategy

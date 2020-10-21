@@ -3,6 +3,9 @@ import sklearn.metrics
 from sklearn import linear_model
 from prettytable import PrettyTable
 from torch.utils.tensorboard import SummaryWriter
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 from dsp import DSP
 from util.util import Util, Chunk
@@ -28,6 +31,10 @@ class ADX:
         self.revenue = 0
         self.revenue_gain = 0
 
+        self.auction_history = pd.DataFrame(
+            columns=["round", "highest_bids", "second_highest_bids", "market_prices", "pctrs"])
+
+
     def train_dsp(self, x, y, z, indices, x_test, y_test, z_test):
         print('Training DSPs...')
         for i in range(self.dsp_number):
@@ -44,6 +51,9 @@ class ADX:
         auc = sklearn.metrics.roc_auc_score(y_test, self.ctr_model.predict_proba(x_test)[:, 1])
         print('Evaluation: classify auc is: {}%'.format(auc * 100))
         print('eCPC:{0:.2f}'.format(self.ecpc))
+
+    def predict_ctr(self, bid_requests):
+        return self.ctr_model.predict_proba(bid_requests)[:, 1].reshape((-1, 1))
 
     def play(self, name, bid_requests, clicks, origin_market_prices, dsp_total_budget, game_interval=1e4):
         (br_size, _) = np.shape(bid_requests)
@@ -66,6 +76,16 @@ class ADX:
             rps = self.get_reserve_price(this_brs)
 
             is_not_abort, is_winner, market_prices, highest_bids, second_highest_bids = self.do_auction(bids, rps)
+
+            self.highest_bids.append_data(highest_bids)
+            self.second_highest_bids.append_data(second_highest_bids)
+
+            pctr = self.predict_ctr(this_brs)
+            df = pd.DataFrame([[round, highest_bids[i, 0], second_highest_bids[i, 0],
+                                market_prices[i, 0], pctr[i, 0]] for i in range(this_brs_size)],
+                              columns=["round", "highest_bids", "second_highest_bids", "market_prices", "pctrs"])
+
+            self.auction_history = self.auction_history.append(df, ignore_index=True)
 
             # TODO: print report
             adx_report = PrettyTable(['bid_request', 'impression', 'abort', 'abort_proportion', 'revenue',
@@ -110,9 +130,9 @@ class ADX:
 
             self.writer.add_scalar('adx/reserve_price', self.rp, round)
 
-            adx_report.add_row([self.br, self.imp, self.abort, self.abort / self.br, self.revenue,
+            adx_report.add_row([self.br, self.imp, self.abort, np.round(self.abort / self.br, 4), self.revenue,
                                 self.revenue_gain, self.abort_click, T_bid_request, T_impression, T_abort_num,
-                                T_abort_num / T_bid_request, T_revenue, T_revenue_gain, T_abort_click,
+                                np.round(T_abort_num / T_bid_request, 4), T_revenue, T_revenue_gain, T_abort_click,
                                 self.rp])
 
             for i in range(self.dsp_number):
@@ -138,12 +158,43 @@ class ADX:
                                     int(self.dsp[i].bidder.alpha * self.dsp[i].bidder.eCPC)])
 
                 self.dsp[i].update_strategy(br_size-end)
-            self.update_strategy(this_brs, is_not_abort, highest_bids, second_highest_bids)
+            self.update_strategy(this_brs)
 
             print(adx_report)
             print(dsp_report)
 
             round += 1
+
+        # end of the game
+
+        def plot_boxplot(x, y, data, name):
+            figure_width = 10
+            figure_height = figure_width / 21 * 9
+            f, ax = plt.subplots(1, 1)
+            sns.boxplot(y=y, x=x, data=data, ax=ax, palette="colorblind", fliersize=0.5)
+            if y == "pctrs":
+                ax.set_ylim([0, 0.01])
+
+            fig = plt.gcf()
+            fig.set_size_inches(figure_width, figure_height)
+            plt.tight_layout(pad=0, w_pad=0, h_pad=0, rect=(0.01, 0, 0.99, 1.0))
+
+            self.writer.add_figure(name + '/' + y, f)
+            plt.close(f)
+
+        plot_boxplot("round", "highest_bids", self.auction_history, name="adx")
+        plot_boxplot("round", "second_highest_bids", self.auction_history, name="adx")
+        plot_boxplot("round", "market_prices", self.auction_history, name="adx")
+        plot_boxplot("round", "pctrs", self.auction_history, name="adx")
+
+        for dsp in self.dsp:
+            name = "dsp/{0:d}".format(dsp.name)
+            plot_boxplot("round", "market_prices", dsp.market_price_history, name=name)
+            plot_boxplot("round", "pctrs", dsp.bidding_history, name=name)
+            plot_boxplot("round", "bids", dsp.bidding_history, name=name)
+
+        self.writer.close()
+
         return
 
     def get_reserve_price(self, bid_requests):
@@ -155,10 +206,9 @@ class ADX:
 
         return rps
 
-    def update_strategy(self, bid_requests, is_not_abort, highest_bids, second_highest_bids):
+    def update_strategy(self, bid_requests):
         # TODO update strategy
-        self.highest_bids.append_data(highest_bids)
-        self.second_highest_bids.append_data(second_highest_bids)
+        (br_size, _) = np.shape(bid_requests)
 
         assert self.highest_bids.values == self.second_highest_bids.values
 
@@ -179,7 +229,8 @@ class ADX:
             return gain - risk
 
         gain = [revenue_gain_expectation(i) for i in range(0, self.max_bid_price)]
-        self.rp = gain.index(max(gain))
+
+        self.rp = int(np.ceil(gain.index(max(gain)) * (1 - self.abort / self.br)))
 
         # print("update ADX's reserve price as {0:d}".format(self.rp))
 

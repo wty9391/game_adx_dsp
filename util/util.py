@@ -54,7 +54,7 @@ class Chunk:
         self.__init__()
         self.append_data(data)
 
-    def append_data(self, data, drop_rate=0.5):
+    def append_data(self, data, drop_rate=0.25):
         """
 
         :param drop_rate:

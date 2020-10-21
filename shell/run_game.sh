@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-#advertisers="1458 2259 2261 2821 2997 3358 3386 3427 3476"
-advertisers="3386"
+advertisers="1458 2259 2261 2821 2997 3358 3386 3427 3476"
+#advertisers="3386"
 
 for advertiser in $advertisers; do
     mkdir -p ../result/$advertiser/log/run_game

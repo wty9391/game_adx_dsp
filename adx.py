@@ -32,8 +32,8 @@ class ADX:
         self.revenue_gain = 0
 
         self.auction_history = pd.DataFrame(
-            columns=["round", "highest_bids", "second_highest_bids", "market_prices", "pctrs"])
-
+            columns=["round", "highest_bids", "second_highest_bids", "pctrs"])
+        self.market_price_history = pd.DataFrame(columns=["round", "market_prices"])
 
     def train_dsp(self, x, y, z, indices, x_test, y_test, z_test):
         print('Training DSPs...')
@@ -82,10 +82,13 @@ class ADX:
 
             pctr = self.predict_ctr(this_brs)
             df = pd.DataFrame([[round, highest_bids[i, 0], second_highest_bids[i, 0],
-                                market_prices[i, 0], pctr[i, 0]] for i in range(this_brs_size)],
-                              columns=["round", "highest_bids", "second_highest_bids", "market_prices", "pctrs"])
-
+                                pctr[i, 0]] for i in range(this_brs_size)],
+                              columns=["round", "highest_bids", "second_highest_bids", "pctrs"])
             self.auction_history = self.auction_history.append(df, ignore_index=True)
+
+            df = pd.DataFrame([[round, market_prices[is_not_abort][i]] for i in range(is_not_abort.sum())],
+                              columns=["round", "market_prices"])
+            self.market_price_history = self.market_price_history.append(df, ignore_index=True)
 
             # TODO: print report
             adx_report = PrettyTable(['bid_request', 'impression', 'abort', 'abort_proportion', 'revenue',
@@ -184,7 +187,7 @@ class ADX:
 
         plot_boxplot("round", "highest_bids", self.auction_history, name="adx")
         plot_boxplot("round", "second_highest_bids", self.auction_history, name="adx")
-        plot_boxplot("round", "market_prices", self.auction_history, name="adx")
+        plot_boxplot("round", "market_prices", self.market_price_history, name="adx")
         plot_boxplot("round", "pctrs", self.auction_history, name="adx")
 
         for dsp in self.dsp:

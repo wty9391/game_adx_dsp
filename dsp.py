@@ -77,7 +77,7 @@ class DSP():
                           columns=["round", "pctrs", "bids"])
         self.bidding_history = self.bidding_history.append(df, ignore_index=True)
 
-        df = pd.DataFrame([[round, market_prices[i, 0]] for i in range(is_winner.sum())],
+        df = pd.DataFrame([[round, market_prices[is_winner][i, 0]] for i in range(is_winner.sum())],
                           columns=["round", "market_prices"])
         self.market_price_history = self.market_price_history.append(df, ignore_index=True)
 

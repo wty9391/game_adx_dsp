@@ -12,11 +12,13 @@ from util.util import Util, Chunk
 
 
 class ADX:
-    def __init__(self, dsp_number, ctr_max_iter=50, max_bid_price=300):
+    def __init__(self, dsp_number, ctr_max_iter=100, max_bid_price=300, max_reserve_price=150):
         self.dsp_number = dsp_number
         self.max_bid_price = max_bid_price
+        self.max_reserve_price = max_reserve_price
         self.dsp = [DSP(i, ctr_max_iter=ctr_max_iter, max_bid_price=300) for i in range(self.dsp_number)]
-        self.ctr_model = linear_model.SGDClassifier(loss='log', penalty='l2', alpha=1e-6, verbose=0, n_jobs=4, max_iter=ctr_max_iter)
+        self.ctr_model = linear_model.SGDClassifier(loss='log', penalty='l2', alpha=1e-6, verbose=0, n_jobs=4,
+                                                    max_iter=ctr_max_iter)
         self.ecpc = 0
         self.rp = 0
         self.highest_bids = Chunk(list(range(0, self.max_bid_price)))
@@ -33,7 +35,7 @@ class ADX:
 
         self.auction_history = pd.DataFrame(
             columns=["round", "highest_bids", "second_highest_bids", "pctrs"])
-        self.market_price_history = pd.DataFrame(columns=["round", "market_prices"])
+        self.market_price_history = pd.DataFrame(columns=["round", "market_prices", "reserve_prices"])
 
     def train_dsp(self, x, y, z, indices, x_test, y_test, z_test):
         print('Training DSPs...')
@@ -86,8 +88,9 @@ class ADX:
                               columns=["round", "highest_bids", "second_highest_bids", "pctrs"])
             self.auction_history = self.auction_history.append(df, ignore_index=True)
 
-            df = pd.DataFrame([[round, market_prices[is_not_abort][i]] for i in range(is_not_abort.sum())],
-                              columns=["round", "market_prices"])
+            df = pd.DataFrame([[round, market_prices[is_not_abort][i], rps[is_not_abort][i]]
+                               for i in range(is_not_abort.sum())],
+                              columns=["round", "market_prices", "reserve_prices"])
             self.market_price_history = self.market_price_history.append(df, ignore_index=True)
 
             # TODO: print report
@@ -153,14 +156,15 @@ class ADX:
                 self.writer.add_scalar('dsp/{0:d}/T_impression'.format(i), T_imp, round)
                 self.writer.add_scalar('dsp/{0:d}/T_click'.format(i), T_clk, round)
                 self.writer.add_scalar('dsp/{0:d}/T_cost'.format(i), T_cost, round)
-                self.writer.add_scalar('dsp/{0:d}/bidding_para'.format(i), int(self.dsp[i].bidder.alpha * self.dsp[i].bidder.eCPC), round)
+                self.writer.add_scalar('dsp/{0:d}/bidding_para'.format(i),
+                                       int(self.dsp[i].bidder.alpha * self.dsp[i].bidder.eCPC), round)
 
                 dsp_report.add_row([self.dsp[i].name, self.dsp[i].budget, self.dsp[i].available_budget,
                                     self.dsp[i].imp, self.dsp[i].click, self.dsp[i].cost,
                                     T_imp, T_clk, T_cost,
                                     int(self.dsp[i].bidder.alpha * self.dsp[i].bidder.eCPC)])
 
-                self.dsp[i].update_strategy(br_size-end)
+                self.dsp[i].update_strategy(br_size - end)
             self.update_strategy(this_brs)
 
             print(adx_report)
@@ -170,11 +174,11 @@ class ADX:
 
         # end of the game
 
-        def plot_boxplot(x, y, data, name):
+        def plot_boxplot(x, y, data, name, hue=None):
             figure_width = 10
             figure_height = figure_width / 21 * 9
             f, ax = plt.subplots(1, 1)
-            sns.boxplot(y=y, x=x, data=data, ax=ax, palette="colorblind", fliersize=0.5)
+            sns.boxplot(y=y, x=x, hue=hue, data=data, ax=ax, palette="colorblind", fliersize=0.5)
             if y == "pctrs":
                 ax.set_ylim([0, 0.01])
 
@@ -182,19 +186,76 @@ class ADX:
             fig.set_size_inches(figure_width, figure_height)
             plt.tight_layout(pad=0, w_pad=0, h_pad=0, rect=(0.01, 0, 0.99, 1.0))
 
-            self.writer.add_figure(name + '/' + y, f)
+            self.writer.add_figure(name, f)
             plt.close(f)
 
-        plot_boxplot("round", "highest_bids", self.auction_history, name="adx")
-        plot_boxplot("round", "second_highest_bids", self.auction_history, name="adx")
-        plot_boxplot("round", "market_prices", self.market_price_history, name="adx")
-        plot_boxplot("round", "pctrs", self.auction_history, name="adx")
+        plot_boxplot("round", "highest_bids", self.auction_history, name="adx/highest_bids")
+        plot_boxplot("round", "second_highest_bids", self.auction_history, name="adx/second_highest_bids")
+        plot_boxplot("round", "market_prices", self.market_price_history, name="adx/market_prices")
+        plot_boxplot("round", "pctrs", self.auction_history, name="adx/pctrs")
+
+        def get_melt_df(target_df, source_df, metric_name, x_name, y_name):
+            """
+            target_df[y_name] = source_df[metric_name] and
+            target_df["metric"] = metric_name
+
+            :param target_df:
+            :param source_df:
+            :param metric_name:
+            :param x_name:
+            :param y_name:
+            :return:
+            """
+            return target_df.append(source_df[[x_name, metric_name]].
+                                    rename(columns={x_name: x_name, metric_name: y_name}).
+                                    assign(metric=[metric_name] * len(source_df.index)),
+                                    ignore_index=True)
+
+        def get_adjacent_df(df, col):
+            col.append("round")
+            temp_df = df[col].copy(deep=True)
+            temp_df = temp_df[temp_df["round"] > 0]
+            temp_df["round"] = temp_df["round"] - 1
+            return temp_df
+
+        # plot reserve_price-market_price boxplot
+        df = pd.DataFrame(columns=["round", "prices", "metric"])
+        df = get_melt_df(df, self.market_price_history,
+                         metric_name="reserve_prices", x_name="round", y_name="prices")
+        df = get_melt_df(df, self.market_price_history,
+                         metric_name="market_prices", x_name="round", y_name="prices")
+        plot_boxplot("round", "prices", df, name="adx/rp-mp", hue="metric")
+
+        # plot highest_bids-reserve_price_next boxplot
+        df = pd.DataFrame(columns=["round", "prices", "metric"])
+        df = get_melt_df(df, self.auction_history,
+                         metric_name="highest_bids", x_name="round", y_name="prices")
+        df = get_melt_df(df, get_adjacent_df(self.market_price_history, ["reserve_prices"]),
+                         metric_name="reserve_prices", x_name="round", y_name="prices")
+        plot_boxplot("round", "prices", df, name="adx/hb-rp_next", hue="metric")
+
+        # plot second_highest_bids-reserve_price_next boxplot
+        df = pd.DataFrame(columns=["round", "prices", "metric"])
+        df = get_melt_df(df, self.auction_history,
+                         metric_name="second_highest_bids", x_name="round", y_name="prices")
+        df = get_melt_df(df, get_adjacent_df(self.market_price_history, ["reserve_prices"]),
+                         metric_name="reserve_prices", x_name="round", y_name="prices")
+        plot_boxplot("round", "prices", df, name="adx/2hb-rp_next", hue="metric")
 
         for dsp in self.dsp:
-            name = "dsp/{0:d}".format(dsp.name)
-            plot_boxplot("round", "market_prices", dsp.market_price_history, name=name)
-            plot_boxplot("round", "pctrs", dsp.bidding_history, name=name)
-            plot_boxplot("round", "bids", dsp.bidding_history, name=name)
+            plot_boxplot("round", "market_prices", dsp.market_price_history,
+                         name="dsp/{0:d}/market_prices".format(dsp.name))
+            plot_boxplot("round", "pctrs", dsp.bidding_history, name="dsp/{0:d}/pctrs".format(dsp.name))
+            plot_boxplot("round", "bids", dsp.bidding_history, name="dsp/{0:d}/bids".format(dsp.name))
+
+            # plot market_price-bid_price boxplot
+            df = pd.DataFrame(columns=["round", "prices", "metric"])
+            df = get_melt_df(df, dsp.market_price_history,
+                             metric_name="market_prices", x_name="round", y_name="prices")
+            df = get_melt_df(df, get_adjacent_df(dsp.bidding_history, ["bids"]),
+                             metric_name="bids", x_name="round", y_name="prices")
+
+            plot_boxplot("round", "prices", df, name="dsp/{0:d}/mp-bids_next".format(dsp.name), hue="metric")
 
         self.writer.close()
 
@@ -206,8 +267,10 @@ class ADX:
         rps = np.zeros(shape=(br_size, 1)) + self.rp
         # rps = np.random.randint(low=1, high=300, size=(br_size, 1))
         # TODO: calculate optimal reserve prices
-
-        return rps
+        rps = np.random.normal(loc=self.rp, scale=5, size=rps.shape)
+        rps[rps < 0] = 0
+        rps[rps > self.max_reserve_price] = self.max_reserve_price
+        return np.floor(rps)
 
     def update_strategy(self, bid_requests):
         # TODO update strategy
@@ -220,11 +283,11 @@ class ADX:
             risk = 0
             for b1 in range(rp, self.max_bid_price):
                 gain += self.highest_bids.pdf[b1] * \
-                    sum([self.second_highest_bids.pdf_normalized[b1][b2] * (rp - b2)for b2 in range(rp)])
+                        sum([self.second_highest_bids.pdf_normalized[b1][b2] * (rp - b2) for b2 in range(rp)])
 
             for b1 in range(rp):
                 risk += self.highest_bids.pdf[b1] * \
-                    sum([self.second_highest_bids.pdf_normalized[b1][b2] * b2 for b2 in range(b1)])
+                        sum([self.second_highest_bids.pdf_normalized[b1][b2] * b2 for b2 in range(b1)])
 
             # gain = (self.second_highest_bids.cdf[rp] * rp - self.second_highest_bids.integra_cdf[rp])\
             #        * (1 - self.highest_bids.cdf[rp])
@@ -233,7 +296,8 @@ class ADX:
 
         gain = [revenue_gain_expectation(i) for i in range(0, self.max_bid_price)]
 
-        self.rp = int(np.ceil(gain.index(max(gain)) * (1 - self.abort / self.br)))
+        self.rp = int(np.floor(gain.index(max(gain)) * (1 - self.abort / self.br)))
+        self.rp = min(self.rp, self.max_reserve_price)
 
         # print("update ADX's reserve price as {0:d}".format(self.rp))
 
@@ -264,7 +328,7 @@ class ADX:
         is_winner[np.arange(bid_size), winner_index] = True
         is_winner[is_abort.reshape((-1,)), :] = False
         assert np.sum(is_winner) == np.sum(is_not_abort), \
-            "the number of winners [{0:d}] must be equal to unabort auctions [{1:d}]"\
+            "the number of winners [{0:d}] must be equal to unabort auctions [{1:d}]" \
                 .format(np.sum(is_winner), np.sum(is_not_abort))
 
         bids_copy = np.copy(bids)
@@ -276,9 +340,3 @@ class ADX:
         market_prices = np.max(augment_bids, axis=1).reshape((-1, 1))  # only available for unabort auctions
 
         return is_not_abort, is_winner, market_prices, highest_bids, second_highest_bids
-
-
-
-
-
-

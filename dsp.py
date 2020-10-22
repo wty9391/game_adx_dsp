@@ -4,7 +4,7 @@ import pandas as pd
 import util.truthful_bidder as truthful_bidder
 from util.util import Util, Chunk
 
-class DSP():
+class DSP:
     def __init__(self, name, ctr_max_iter=10, max_bid_price=300):
         self.name = name
         self.ctr_max_iter = ctr_max_iter
@@ -22,7 +22,7 @@ class DSP():
         self.last_br = None  # used to update strategy
 
         self.bidding_history = pd.DataFrame(columns=["round", "pctrs", "bids"])
-        self.market_price_history = pd.DataFrame(columns=["round", "market_prices"])
+        self.market_price_history = pd.DataFrame(columns=["round", "market_prices", "bids"])
 
     def train(self, x, y, z):
         _, alpha = self.bidder.fit(x, y, z)
@@ -77,8 +77,9 @@ class DSP():
                           columns=["round", "pctrs", "bids"])
         self.bidding_history = self.bidding_history.append(df, ignore_index=True)
 
-        df = pd.DataFrame([[round, market_prices[is_winner][i, 0]] for i in range(is_winner.sum())],
-                          columns=["round", "market_prices"])
+        df = pd.DataFrame([[round, market_prices[is_winner][i, 0], bids[is_winner][i, 0]]
+                           for i in range(is_winner.sum())],
+                          columns=["round", "market_prices", "bids"])
         self.market_price_history = self.market_price_history.append(df, ignore_index=True)
 
     def update_strategy(self, available_br_number, max_iteration=10, converge_threshold=0.01):
